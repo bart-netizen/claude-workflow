@@ -1,0 +1,14 @@
+{
+  "name": "bart-workflow",
+  "description": "Personal dev workflow: idea -> spec -> build -> ship -> check-prod, on GitHub + GCP Cloud Run",
+  "owner": {
+    "name": "Bart Beekhuizen"
+  },
+  "plugins": [
+    {
+      "name": "flow",
+      "source": "./plugins/flow",
+      "description": "Skills that turn each hand-off in the dev loop into a repeatable step: spec, ship, check-prod, setup-repo"
+    }
+  ]
+}

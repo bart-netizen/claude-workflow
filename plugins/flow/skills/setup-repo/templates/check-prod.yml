@@ -1,0 +1,31 @@
+# Weekly production check. Opens or updates "prod-check" issues; silent when healthy.
+name: check-prod
+
+on:
+  schedule:
+    - cron: "47 6 * * 1"   # Monday ~08:47 Madrid time (UTC in cron)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: https://github.com/bart-netizen/claude-workflow.git
+          plugins: flow@bart-workflow
+          claude_args: >-
+            --allowedTools "Bash(gcloud logging read *),Bash(gcloud run services describe *),Bash(gcloud run revisions list *),Bash(gh issue list *),Bash(gh issue create *),Bash(gh issue comment *),Bash(curl -s *)"
+          prompt: /flow:check-prod window 7d

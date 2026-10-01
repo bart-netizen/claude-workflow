@@ -1,0 +1,7 @@
+{
+  "name": "flow",
+  "description": "Turns the hand-offs in a solo dev loop (idea, spec, build, ship, check production) into repeatable skills for GitHub + GCP Cloud Run projects",
+  "author": {
+    "name": "Bart Beekhuizen"
+  }
+}
