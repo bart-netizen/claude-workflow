@@ -19,13 +19,14 @@ Goal: after this, the user's loop is "describe idea -> add label `claude` -> rev
    and commit the resulting `.claude/settings.json`.
 5. **Workflows**: copy from `${CLAUDE_SKILL_DIR}/templates/` into `.github/workflows/`, filling the placeholders:
    - `claude.yml`: builds issues labelled `claude` and answers `@claude` on issues and PRs.
-   - `deploy.yml`: on push to `main`, deploys to Cloud Run, then runs a 1-hour check-prod.
-   - `check-prod.yml`: weekly production check that opens issues.
-   - If no CI exists for tests, add `ci.yml` running the Project facts test/lint commands on pull requests.
+   - `deploy.yml`: on push to `main`, deploys to Cloud Run (build runs in Cloud Build) and smoke-tests the health URL.
+   - `check-prod.yml`: daily gate of seconds; Claude analyses logs only after a deploy (24h) and every Monday (7d).
+   - `ci.yml`: tests on pull requests only, with dependency cache and cancel-in-progress; fill in the language block and the Project facts lint/test commands. Skip if equivalent CI exists, but add cancel-in-progress and paths-ignore to it.
+   - All jobs use `runs-on: ubuntu-latest`; switching to a home runner later is a one-line change per job.
    Skip any workflow the repo already has an equivalent of; adapt instead of duplicating.
 6. **GitHub Actions auth to GCP**: prefer Workload Identity Federation (no keys). Check with `gcloud iam workload-identity-pools list --location=global --project=<project>`. If missing, print the exact gcloud commands to create pool, provider (restricted to this repo) and a deploy service account with roles `run.admin`, `iam.serviceAccountUser`, `cloudbuild.builds.editor`, `artifactregistry.writer`, `logging.viewer`, and let the user run them. Never create service account keys.
 7. **Repo variables and secrets**: list exactly what the user must set (`gh variable set` / `gh secret set` commands ready to paste):
-   - variables: `GCP_PROJECT`, `GCP_REGION`, `CLOUD_RUN_SERVICE`, `GCP_WIF_PROVIDER`, `GCP_DEPLOY_SA`
+   - variables: `GCP_PROJECT`, `GCP_REGION`, `CLOUD_RUN_SERVICE`, `GCP_WIF_PROVIDER`, `GCP_DEPLOY_SA`, `HEALTH_URL`
    - secret: `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`), or `ANTHROPIC_API_KEY`
    - labels: create `claude` and `prod-check` with `gh label create`.
 8. Open a PR with all of it, body listing what the user still has to do (step 6/7 items). Do not merge.

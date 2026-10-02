@@ -1,31 +1,50 @@
-# Weekly production check. Opens or updates "prod-check" issues; silent when healthy.
+# Daily cheap gate (seconds): runs Claude's log analysis only if something was deployed
+# in the last 24h, plus a full 7-day check every Monday. Opens/updates "prod-check" issues.
 name: check-prod
 
 on:
   schedule:
-    - cron: "47 6 * * 1"   # Monday ~08:47 Madrid time (UTC in cron)
+    - cron: "47 5 * * *"   # ~07:47 Madrid in summer, 06:47 in winter (cron is UTC)
   workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
   issues: write
+  actions: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: google-github-actions/auth@v2
+      - name: Decide window
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(date -u +%u)" = "1" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "window=7d" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          since=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          n=$(gh run list -R "$GITHUB_REPOSITORY" --workflow deploy.yml --json createdAt \
+                --jq "[.[] | select(.createdAt >= \"$since\")] | length")
+          if [ "$n" -gt 0 ]; then echo "window=24h" >> "$GITHUB_OUTPUT"; else echo "window=" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.gate.outputs.window != ''
+        uses: actions/checkout@v4
+      - if: steps.gate.outputs.window != ''
+        uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
-      - uses: google-github-actions/setup-gcloud@v2
-      - uses: anthropics/claude-code-action@v1
+      - if: steps.gate.outputs.window != ''
+        uses: google-github-actions/setup-gcloud@v2
+      - if: steps.gate.outputs.window != ''
+        uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: https://github.com/bart-netizen/claude-workflow.git
           plugins: flow@bart-workflow
           claude_args: >-
             --allowedTools "Bash(gcloud logging read *),Bash(gcloud run services describe *),Bash(gcloud run revisions list *),Bash(gh issue list *),Bash(gh issue create *),Bash(gh issue comment *),Bash(curl -s *)"
-          prompt: /flow:check-prod window 7d
+          prompt: /flow:check-prod window ${{ steps.gate.outputs.window }}

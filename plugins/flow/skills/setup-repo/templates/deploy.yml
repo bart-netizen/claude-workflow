@@ -1,9 +1,11 @@
-# Merge to main = deploy to Cloud Run, then a short production check.
+# Merge to main = deploy to Cloud Run + a smoke test of seconds, not minutes.
+# Log analysis happens in check-prod.yml the next morning (only if something was deployed).
 name: deploy
 
 on:
   push:
     branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
   workflow_dispatch:
 
 concurrency:
@@ -13,11 +15,11 @@ concurrency:
 permissions:
   contents: read
   id-token: write
-  issues: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
@@ -26,33 +28,17 @@ jobs:
           service_account: ${{ vars.GCP_DEPLOY_SA }}
       - uses: google-github-actions/setup-gcloud@v2
       - name: Deploy
+        # --source builds in Cloud Build (2,500 free build-minutes/month), not on this runner.
         run: |
           gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
             --source . \
             --project "${{ vars.GCP_PROJECT }}" \
             --region "${{ vars.GCP_REGION }}" \
             --quiet
-      # Rollback = revert the merge commit; this workflow redeploys the previous state.
-
-  check-after-deploy:
-    needs: deploy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Let traffic come in
-        run: sleep 900
-      - uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOY_SA }}
-      - uses: google-github-actions/setup-gcloud@v2
-      - uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: https://github.com/bart-netizen/claude-workflow.git
-          plugins: flow@bart-workflow
-          claude_args: >-
-            --allowedTools "Bash(gcloud logging read *),Bash(gcloud run services describe *),Bash(gcloud run revisions list *),Bash(gh issue list *),Bash(gh issue create *),Bash(gh issue comment *),Bash(curl -s *)"
-          prompt: |
-            /flow:check-prod window 1h. A new revision was just deployed from commit ${{ github.sha }}.
-            Focus on errors that started with this revision.
+      - name: Smoke test
+        run: |
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.HEALTH_URL }}") && [ "$code" = "200" ] && echo "healthy" && exit 0
+            echo "attempt $i: $code"; sleep 10
+          done
+          echo "::error::Health check failed after deploy. Rollback: revert the merge commit."; exit 1

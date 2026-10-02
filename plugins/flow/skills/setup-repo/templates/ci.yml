@@ -1,0 +1,34 @@
+# Tests on pull requests only. The ship skill already runs them before the PR,
+# so this is the referee, kept as cheap as possible.
+name: ci
+
+on:
+  pull_request:
+    paths-ignore: ["**.md", "docs/**", "DECISIONS.md"]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true   # a new push cancels the old run
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest   # later: self-hosted, if ci-report says so
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # Pick ONE block, matching the project (setup-repo fills this in):
+      # Node:
+      # - uses: actions/setup-node@v4
+      #   with: { node-version-file: .nvmrc, cache: npm }
+      # - run: npm ci
+      # Python:
+      # - uses: actions/setup-python@v5
+      #   with: { python-version-file: .python-version, cache: pip }
+      # - run: pip install -r requirements.txt
+      - name: Lint
+        run: <LINT_CMD>
+      - name: Test
+        run: <TEST_CMD>

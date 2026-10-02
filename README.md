@@ -3,8 +3,8 @@
 A Claude Code plugin that turns the hand-offs in a solo dev loop into skills, so the human only does the two things that need a human: say **what** to build, and decide to **merge**.
 
 ```
-idea ──spec──▶ issue ──label "claude"──▶ build ──ship──▶ PR ──merge──▶ deploy ──check-prod──▶ issues
- you                     you                 Claude          you       Actions     Actions / weekly
+idea ──spec──▶ issue ──label "claude"──▶ build ──ship──▶ PR ──merge──▶ deploy+smoke ──check-prod──▶ issues
+ you                     you                 Claude          you       Actions         next morning / Monday
 ```
 
 ## Skills (plugin `flow`)
@@ -13,7 +13,8 @@ idea ──spec──▶ issue ──label "claude"──▶ build ──ship─
 | --- | --- | --- |
 | `spec` | You describe a feature, change or bug | Writes a GitHub issue with goal, non-goals, testable acceptance criteria and its own assumptions |
 | `ship` | Code for an issue is done / before any PR | Tests per criterion, lint, docs, DECISIONS.md, PR mapping criteria to evidence. Never merges |
-| `check-prod` | "Is it working?", after each deploy, weekly | Reads Cloud Run logs and revisions, opens or updates `prod-check` issues |
+| `check-prod` | "Is it working?", morning after a deploy, Mondays | Reads Cloud Run logs and revisions, opens or updates `prod-check` issues |
+| `ci-report` | "Is CI te duur?", monthly | Measures Actions minutes per repo/workflow as GitHub bills them, cost on GitHub/Blacksmith/Ubicloud, go/no-go for a home runner |
 | `setup-repo` | "Put this repo on the flow" | Project facts in CLAUDE.md, plugin settings, GitHub Actions for build, deploy and checks |
 
 All skills are model-invoked: you do not type commands, Claude picks them from what you say. Typing `/flow:spec` etc. still works if you want to force one.
@@ -39,3 +40,7 @@ Project-specific facts (GCP project, service, commands) live in each project's `
 - Acceptance criteria are the contract between spec, build and review.
 - Production is read-only for Claude; deploys happen only through merge.
 - When you explain something to Claude for the third time, it becomes a skill here.
+
+## CI cost
+
+Start on GitHub-hosted runners and measure with `ci-report`. Deploy builds run in Cloud Build, scheduled checks skip Claude when nothing was deployed, and CI runs on PRs only with cancel-in-progress. A self-hosted runner at home is a one-line `runs-on` change per job once the numbers justify it.
