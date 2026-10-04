@@ -1,9 +1,10 @@
 # Builds issues labelled "claude" and answers @claude on issues and PRs.
+# The other route still works: start Claude Code yourself, it pushes a claude/ branch.
 name: claude
 
 on:
   issues:
-    types: [labeled, assigned]
+    types: [labeled]
   issue_comment:
     types: [created]
   pull_request_review_comment:
@@ -20,7 +21,7 @@ permissions:
   pull-requests: write
   issues: write
   id-token: write
-  actions: read
+  actions: write   # to start CI on Claude's branch (see last step)
 
 jobs:
   claude:
@@ -34,12 +35,35 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # So Claude can run the same checks as CI before the PR (ship skill).
+      # setup-repo: copy the language setup + install steps from ci.yml here.
       - uses: anthropics/claude-code-action@v1
+        id: claude
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: https://github.com/bart-netizen/claude-workflow.git
           plugins: flow@bart-workflow
+          # Full Claude output only on a debug re-run (gh run rerun <id> --debug); private repo.
+          show_full_output: ${{ runner.debug == '1' }}
           additional_permissions: |
             actions: read
+          claude_args: >-
+            --allowedTools "Bash(<TEST_CMD> *),Bash(<LINT_CMD> *),Bash(git *),Bash(gh pr *),Bash(gh issue *),Bash(gh run *)"
           # No prompt on purpose: tag mode reads the issue or comment itself.
-          # The "Way of working" rule in CLAUDE.md makes it finish with the ship skill.
+          # "Way of working" in CLAUDE.md Project facts makes it finish with the ship skill.
+      # Tag mode only leaves a "Create PR" link. Open the PR here, so the human step is only
+      # review + merge. A PR opened with GITHUB_TOKEN does not trigger workflows, but
+      # workflow_dispatch does, so CI is started explicitly on the branch.
+      - name: Open PR and start CI
+        if: github.event_name == 'issues' && steps.claude.outputs.branch_name != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BR: ${{ steps.claude.outputs.branch_name }}
+          N: ${{ github.event.issue.number }}
+          TITLE: ${{ github.event.issue.title }}
+        run: |
+          # Ask the API, not git: the action has already revoked the git credentials it set up.
+          if ! gh api "repos/$GITHUB_REPOSITORY/branches/$BR" --silent 2>/dev/null; then echo "No branch pushed; nothing to open."; exit 0; fi
+          gh pr view "$BR" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh pr create -R "$GITHUB_REPOSITORY" --head "$BR" --base main --title "$TITLE" \
+            --body "Closes #$N. Built by Claude from the issue; what was done is in the issue comment."
+          gh workflow run ci.yml -R "$GITHUB_REPOSITORY" --ref "$BR"

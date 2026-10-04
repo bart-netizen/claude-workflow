@@ -24,14 +24,23 @@ Goal: after this, the user's loop is "describe idea -> add label `claude` -> rev
    - `ci.yml`: tests on pull requests only, with dependency cache and cancel-in-progress; fill in the language block and the Project facts lint/test commands. Skip if equivalent CI exists, but add cancel-in-progress and paths-ignore to it.
    - All jobs use `runs-on: ubuntu-latest`; switching to a home runner later is a one-line change per job.
    Skip any workflow the repo already has an equivalent of; adapt instead of duplicating.
-6. **GitHub Actions auth to GCP**: prefer Workload Identity Federation (no keys). Check with `gcloud iam workload-identity-pools list --location=global --project=<project>`. If missing, print the exact gcloud commands to create pool, provider (restricted to this repo) and a deploy service account with roles `run.admin`, `iam.serviceAccountUser`, `cloudbuild.builds.editor`, `artifactregistry.writer`, `logging.viewer`, and let the user run them. Never create service account keys.
+6. **GitHub Actions auth to GCP**: Workload Identity Federation, never service account keys. Check with `gcloud iam workload-identity-pools list --location=global --project=<project>`. If missing: pool `github`, OIDC provider with `--attribute-condition "assertion.repository=='<owner>/<repo>'"`, service account `github-deployer` bound via `roles/iam.workloadIdentityUser` to the repo principalSet. Least privilege by deploy style:
+   - repo already has `cloudbuild.yaml` (build SA deploys): `cloudbuild.builds.editor`, `serviceusage.serviceUsageConsumer`, `iam.serviceAccountUser` on the build SA only, `storage.objectAdmin` + `storage.legacyBucketReader` on the source-staging bucket only. Deploy with `gcloud builds submit --config cloudbuild.yaml` so the manual and automatic route stay identical.
+   - otherwise (`gcloud run deploy --source`): `run.admin`, `iam.serviceAccountUser` on the runtime SA, `cloudbuild.builds.editor`, `artifactregistry.writer`, `serviceusage.serviceUsageConsumer`.
+   - always, for check-prod: `logging.viewer`, `run.viewer` (+ `cloudscheduler.viewer` if jobs exist).
+   Show the commands and run them only after the user says yes.
 7. **Repo variables and secrets**: list exactly what the user must set (`gh variable set` / `gh secret set` commands ready to paste):
    - variables: `GCP_PROJECT`, `GCP_REGION`, `CLOUD_RUN_SERVICE`, `GCP_WIF_PROVIDER`, `GCP_DEPLOY_SA`, `HEALTH_URL`
    - secret: `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`), or `ANTHROPIC_API_KEY`
    - labels: create `claude` and `prod-check` with `gh label create`.
+   - repo setting: allow GitHub Actions to create pull requests (`gh api -X PUT repos/<repo>/actions/permissions/workflow -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true`), otherwise the auto-PR step in claude.yml fails.
+   - token: tell the user to run `claude setup-token`, then `pbpaste | tr -d ' \n\r' | gh secret set CLAUDE_CODE_OAUTH_TOKEN -R <repo>` (a pasted token often breaks on line wraps: 401 "OAuth access token is invalid").
 8. Open a PR with all of it, body listing what the user still has to do (step 6/7 items). Do not merge.
 
 ## Rules
+
+- Check required status checks first (`gh api repos/<repo>/branches/main/protection --jq .required_status_checks`). Never put a paths filter on a workflow whose job is a required check.
+- Test the label route once after merge with a small real docs issue: label `claude` must end in an open PR with CI running, without a click. Debug failures with `gh run rerun <id> --debug` (shows the full Claude output).
 
 - Never put project ids, URLs of private services, tokens or customer names in the flow plugin repo; they belong in the project repo only.
 - Do not change application code during setup.

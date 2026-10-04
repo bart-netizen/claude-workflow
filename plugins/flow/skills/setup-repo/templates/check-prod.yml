@@ -45,6 +45,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: https://github.com/bart-netizen/claude-workflow.git
           plugins: flow@bart-workflow
+          show_full_output: ${{ runner.debug == '1' }}
           claude_args: >-
             --allowedTools "Bash(gcloud logging read *),Bash(gcloud run services describe *),Bash(gcloud run revisions list *),Bash(gh issue list *),Bash(gh issue create *),Bash(gh issue comment *),Bash(curl -s *)"
           prompt: /flow:check-prod window ${{ steps.gate.outputs.window }}

@@ -3,8 +3,10 @@
 name: ci
 
 on:
+  # No paths filter on PRs: if "test" is a required check, a skipped run never reports
+  # and doc-only PRs can never be merged.
   pull_request:
-    paths-ignore: ["**.md", "docs/**", "DECISIONS.md"]
+  workflow_dispatch:   # started by claude.yml on Claude's branch
 
 concurrency:
   group: ci-${{ github.event.pull_request.number }}
