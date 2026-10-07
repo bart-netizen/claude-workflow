@@ -1,0 +1,58 @@
+# Independent review (flow:review) once CI is green on a PR. Comments only; the merge stays with you.
+# Re-run by hand: gh workflow run review -f pr=<number>
+name: review
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number
+        required: true
+
+concurrency:
+  group: review-${{ github.event.workflow_run.head_branch || inputs.pr }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+  id-token: write
+  actions: read
+
+jobs:
+  review:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Find the PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BR: ${{ github.event.workflow_run.head_branch }}
+          IN: ${{ inputs.pr }}
+        run: |
+          if [ -n "$IN" ]; then n="$IN"
+          else n=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$BR" --state open --json number -q '.[0].number // empty'); fi
+          echo "number=$n" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.pr.outputs.number != ''
+        with:
+          ref: refs/pull/${{ steps.pr.outputs.number }}/head
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: https://github.com/bart-netizen/claude-workflow.git
+          plugins: flow@bart-workflow
+          prompt: /flow:review ${{ steps.pr.outputs.number }}
+          claude_args: >-
+            --model opus
+            --allowedTools "Read,Glob,Grep,Write,Bash(gh pr view *),Bash(gh pr diff *),Bash(gh issue view *),Bash(gh pr review *),Bash(git log *),Bash(git diff *),Bash(git show *)"

@@ -19,6 +19,7 @@ Goal: after this, the user's loop is "describe idea -> add label `claude` -> rev
    and commit the resulting `.claude/settings.json`.
 5. **Workflows**: copy from `${CLAUDE_SKILL_DIR}/templates/` into `.github/workflows/`, filling the placeholders:
    - `claude.yml`: builds issues labelled `claude` and answers `@claude` on issues and PRs.
+   - `review.yml`: once CI is green on a PR, an independent Claude (Opus) runs the `review` skill and comments with a verdict. Never approves or merges.
    - `deploy.yml`: on push to `main`, deploys to Cloud Run (build runs in Cloud Build) and smoke-tests the health URL.
    - `check-prod.yml`: daily gate of seconds; Claude analyses logs only after a deploy (24h) and every Monday (7d).
    - `ci.yml`: tests on pull requests only, with dependency cache and cancel-in-progress; fill in the language block and the Project facts lint/test commands. Skip if equivalent CI exists, but add cancel-in-progress and paths-ignore to it.

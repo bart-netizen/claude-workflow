@@ -3,7 +3,7 @@
 A Claude Code plugin that turns the hand-offs in a solo dev loop into skills, so the human only does the two things that need a human: say **what** to build, and decide to **merge**.
 
 ```
-idea ──spec──▶ issue ──label "claude"──▶ build ──ship──▶ PR ──merge──▶ deploy+smoke ──check-prod──▶ issues
+idea ──spec──▶ issue ──label "claude"──▶ build ──ship──▶ PR ──review──▶ merge ──▶ deploy+smoke ──check-prod──▶ issues
  you                     you                 Claude          you       Actions         next morning / Monday
 ```
 
@@ -13,6 +13,7 @@ idea ──spec──▶ issue ──label "claude"──▶ build ──ship─
 | --- | --- | --- |
 | `spec` | You describe a feature, change or bug | Writes a GitHub issue with goal, non-goals, testable acceptance criteria and its own assumptions |
 | `ship` | Code for an issue is done / before any PR | Tests per criterion, lint, docs, DECISIONS.md, PR mapping criteria to evidence. Never merges |
+| `review` | CI is green on a PR, or "review PR #N" | Checks the issue against the business purpose and spec format, then the diff against the criteria and flow rules; one comment with a verdict. Never approves or merges |
 | `check-prod` | "Is it working?", morning after a deploy, Mondays | Reads Cloud Run logs and revisions, opens or updates `prod-check` issues |
 | `ci-report` | "Is CI te duur?", monthly | Measures Actions minutes per repo/workflow as GitHub bills them, cost on GitHub/Blacksmith/Ubicloud, go/no-go for a home runner |
 | `setup-repo` | "Put this repo on the flow" | Project facts in CLAUDE.md, plugin settings, GitHub Actions for build, deploy and checks |
