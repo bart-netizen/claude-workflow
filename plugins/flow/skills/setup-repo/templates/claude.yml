@@ -67,3 +67,15 @@ jobs:
           gh pr view "$BR" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh pr create -R "$GITHUB_REPOSITORY" --head "$BR" --base main --title "$TITLE" \
             --body "Closes #$N. Built by Claude from the issue; what was done is in the issue comment."
           gh workflow run ci.yml -R "$GITHUB_REPOSITORY" --ref "$BR"
+          # Runs started with GITHUB_TOKEN do not fire workflow_run, so the review would never start on
+          # its own. Wait for this CI run and start the review explicitly when it is green.
+          if [ -f .github/workflows/review.yml ]; then
+            PR=$(gh pr view "$BR" -R "$GITHUB_REPOSITORY" --json number -q .number)
+            sleep 10
+            RUN=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --branch "$BR" --event workflow_dispatch -L 1 --json databaseId -q '.[0].databaseId')
+            if [ -n "$RUN" ] && gh run watch "$RUN" -R "$GITHUB_REPOSITORY" --exit-status >/dev/null; then
+              gh workflow run review.yml -R "$GITHUB_REPOSITORY" -f pr="$PR"
+            else
+              echo "CI not green; no review started."
+            fi
+          fi
