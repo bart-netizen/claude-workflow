@@ -95,6 +95,8 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Own workflow token: no GitHub App token exchange needed for a read-only reviewer.
           github_token: ${{ github.token }}
+          # claude.yml starts this review with GITHUB_TOKEN, so the actor is the github-actions bot.
+          allowed_bots: github-actions
           plugin_marketplaces: https://github.com/bart-netizen/claude-workflow.git
           plugins: flow@bart-workflow
           show_full_output: ${{ runner.debug == '1' }}
