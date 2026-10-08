@@ -44,7 +44,7 @@ Project-specific facts (GCP project, service, commands) live in each project's `
 
 ## Reusable workflows
 
-Workflow logic lives here once, under `.github/workflows/`, and project repos call it with a few lines (`uses: bart-netizen/claude-workflow/.github/workflows/<name>.yml@v1`). Improve it here, move the `v1` tag, and every repo follows. Today: `review`. The other workflows are still copied from `setup-repo/templates` and move here when they are next touched.
+Workflow logic lives here once, under `.github/workflows/`, and project repos call it with a few lines (`uses: bart-netizen/claude-workflow/.github/workflows/<name>.yml@v1`). Improve it here, move the `v1` tag, and every repo follows. Today: `review` (it also waits for CI on the PR head itself, so callers only say *when*). The other workflows are still copied from `setup-repo/templates` and move here when they are next touched.
 
 ## CI cost
 

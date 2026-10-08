@@ -18,6 +18,14 @@ on:
       model:
         type: string
         default: opus
+      ci_workflow_file:
+        description: File name of the repo's CI workflow; the review waits for its run on the PR head
+        type: string
+        default: ci.yml
+      wait_minutes:
+        description: How long to wait for CI before giving up
+        type: number
+        default: 20
     secrets:
       # Passed explicitly by the caller: `secrets: inherit` does not cross organisations.
       CLAUDE_CODE_OAUTH_TOKEN:
@@ -26,7 +34,7 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35   # wait for CI (max wait_minutes) + the review itself
     permissions:
       contents: read
       pull-requests: write
@@ -45,15 +53,42 @@ jobs:
           else n=""; fi
           echo "number=$n" >> "$GITHUB_OUTPUT"
           [ -n "$n" ] || echo "No open PR for this run; nothing to review."
-      - uses: actions/checkout@v4
+      # Wait for CI on the PR head here, once for every repo, instead of in each caller.
+      # Uses the Actions API (actions: read), so no extra permissions in the callers.
+      # The result goes to the reviewer as evidence for "existing tests pass".
+      - name: Wait for CI on the PR head
+        id: ci
         if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ steps.pr.outputs.number }}
+          CI_FILE: ${{ inputs.ci_workflow_file }}
+          WAIT: ${{ inputs.wait_minutes }}
+        run: |
+          sha=$(gh pr view "$N" -R "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid)
+          deadline=$((SECONDS + WAIT * 60))
+          st=""; co=""; url=""
+          while :; do
+            line=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100" --jq \
+              "[.workflow_runs[] | select(.path | split(\"@\")[0] | endswith(\"/$CI_FILE\"))]
+               | if length == 0 then empty else (sort_by(.created_at) | last | [.status, (.conclusion // \"\"), .html_url] | @tsv) end")
+            if [ -n "$line" ]; then IFS=$'\t' read -r st co url <<<"$line"; [ "$st" = completed ] && break; fi
+            if [ "$SECONDS" -ge "$deadline" ]; then co="timeout"; break; fi
+            sleep 20
+          done
+          echo "result=${co:-none}" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "CI on $sha: ${co:-none} $url"
+          if [ "$co" != success ]; then echo "::notice::CI is not green (${co:-none}); no review."; fi
+      - uses: actions/checkout@v4
+        if: steps.ci.outputs.result == 'success'
         with:
           ref: refs/pull/${{ steps.pr.outputs.number }}/head
           fetch-depth: 0
       # Claude only reads and writes its review to a file; it has no rights to post.
       # The next step posts it, so text in a PR cannot make Claude act on GitHub.
       - uses: anthropics/claude-code-action@v1
-        if: steps.pr.outputs.number != ''
+        if: steps.ci.outputs.result == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         with:
@@ -63,13 +98,13 @@ jobs:
           plugin_marketplaces: https://github.com/bart-netizen/claude-workflow.git
           plugins: flow@bart-workflow
           show_full_output: ${{ runner.debug == '1' }}
-          prompt: /flow:review ${{ steps.pr.outputs.number }} out=${{ runner.temp }}/flow-review.md
+          prompt: /flow:review ${{ steps.pr.outputs.number }} out=${{ runner.temp }}/flow-review.md ci=${{ steps.ci.outputs.result }} ci_url=${{ steps.ci.outputs.url }}
           claude_args: >-
             --model ${{ inputs.model }}
             --allowedTools "Read,Glob,Grep,Write,Bash(gh pr view *),Bash(gh pr diff *),Bash(gh issue view *),Bash(git log *),Bash(git diff *),Bash(git show *)"
       # One comment per PR, updated on every new review instead of piling up.
       - name: Post or update the review comment
-        if: steps.pr.outputs.number != ''
+        if: steps.ci.outputs.result == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
           N: ${{ steps.pr.outputs.number }}
