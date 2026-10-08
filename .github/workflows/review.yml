@@ -1,0 +1,87 @@
+# Reusable workflow: independent review (flow:review) of one pull request.
+# Called by each repo's own review.yml (see plugins/flow/skills/setup-repo/templates/review.yml).
+# Callers pin a tag (@v1); a change here is one PR in this repo and every repo follows.
+# Posts one sticky comment per PR with a verdict. Never approves, merges or pushes.
+name: review (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      pr:
+        description: PR number (manual run); empty means "find the open PR for head_branch"
+        type: string
+        default: ""
+      head_branch:
+        description: Branch whose CI just went green (workflow_run)
+        type: string
+        default: ""
+      model:
+        type: string
+        default: opus
+    secrets:
+      # Passed explicitly by the caller: `secrets: inherit` does not cross organisations.
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write   # update the sticky review comment
+      actions: read
+    steps:
+      - name: Find the PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BR: ${{ inputs.head_branch }}
+          IN: ${{ inputs.pr }}
+        run: |
+          if [ -n "$IN" ]; then n="$IN"
+          elif [ -n "$BR" ]; then n=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$BR" --state open --json number -q '.[0].number // empty')
+          else n=""; fi
+          echo "number=$n" >> "$GITHUB_OUTPUT"
+          [ -n "$n" ] || echo "No open PR for this run; nothing to review."
+      - uses: actions/checkout@v4
+        if: steps.pr.outputs.number != ''
+        with:
+          ref: refs/pull/${{ steps.pr.outputs.number }}/head
+          fetch-depth: 0
+      # Claude only reads and writes its review to a file; it has no rights to post.
+      # The next step posts it, so text in a PR cannot make Claude act on GitHub.
+      - uses: anthropics/claude-code-action@v1
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Own workflow token: no GitHub App token exchange needed for a read-only reviewer.
+          github_token: ${{ github.token }}
+          plugin_marketplaces: https://github.com/bart-netizen/claude-workflow.git
+          plugins: flow@bart-workflow
+          show_full_output: ${{ runner.debug == '1' }}
+          prompt: /flow:review ${{ steps.pr.outputs.number }} out=${{ runner.temp }}/flow-review.md
+          claude_args: >-
+            --model ${{ inputs.model }}
+            --allowedTools "Read,Glob,Grep,Write,Bash(gh pr view *),Bash(gh pr diff *),Bash(gh issue view *),Bash(git log *),Bash(git diff *),Bash(git show *)"
+      # One comment per PR, updated on every new review instead of piling up.
+      - name: Post or update the review comment
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ steps.pr.outputs.number }}
+          F: ${{ runner.temp }}/flow-review.md
+        run: |
+          if [ ! -s "$F" ]; then echo "::warning::No review written."; exit 0; fi
+          marker='<!-- flow-review -->'
+          body="$(printf '%s\n%s\n\n_Review van commit %s_' "$marker" "$(cat "$F")" "$(git rev-parse --short HEAD)")"
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$N/comments" --paginate \
+                 --jq "[.[] | select(.body | startswith(\"$marker\"))][0].id // empty")
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" >/dev/null && echo "updated $id"
+          else
+            gh pr comment "$N" -R "$GITHUB_REPOSITORY" --body "$body"
+          fi
