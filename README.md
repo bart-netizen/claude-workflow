@@ -42,6 +42,10 @@ Project-specific facts (GCP project, service, commands) live in each project's `
 - Production is read-only for Claude; deploys happen only through merge.
 - When you explain something to Claude for the third time, it becomes a skill here.
 
+## Reusable workflows
+
+Workflow logic lives here once, under `.github/workflows/`, and project repos call it with a few lines (`uses: bart-netizen/claude-workflow/.github/workflows/<name>.yml@v1`). Improve it here, move the `v1` tag, and every repo follows. Today: `review`. The other workflows are still copied from `setup-repo/templates` and move here when they are next touched.
+
 ## CI cost
 
 Start on GitHub-hosted runners and measure with `ci-report`. Deploy builds run in Cloud Build, scheduled checks skip Claude when nothing was deployed, and CI runs on PRs only with cancel-in-progress. A self-hosted runner at home is a one-line `runs-on` change per job once the numbers justify it.
