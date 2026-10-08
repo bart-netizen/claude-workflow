@@ -1,4 +1,5 @@
-# Independent review once CI is green on a PR. The logic lives in bart-netizen/claude-workflow
+# Independent review once CI is green on a PR. Started by workflow_run (PRs you open) and by
+# claude.yml (PRs Claude opens or updates: those runs do not fire workflow_run). The logic lives in bart-netizen/claude-workflow
 # (reusable workflow); this file only decides when to call it. Comments only; merging stays with you.
 # Re-run by hand: gh workflow run review -f pr=<number>
 name: review
@@ -38,5 +39,7 @@ jobs:
     with:
       pr: ${{ inputs.pr }}
       head_branch: ${{ github.event.workflow_run.head_branch }}
+      # The file name of this repo's CI workflow; the review waits for its run on the PR head.
+      ci_workflow_file: ci.yml
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

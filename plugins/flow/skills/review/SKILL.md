@@ -15,6 +15,7 @@ The builder already checked its own work with `ship`. You are not the builder. A
    No linked issue (a PR opened by hand, Dependabot): treat the PR body as the spec, and report "geen issue" as a finding under "Issue vs doel en specs". Dependency bumps: skip part 1 and check only deploy risk.
 3. `CLAUDE.md` (purpose, `## Project facts`, out of bounds, domain facts, conventions) and `DECISIONS.md`.
 4. Open the tests and code the PR points to as evidence. Read them; do not trust names.
+5. CI: invoked with `ci=<result> ci_url=<url>` (the review workflow), that is the real CI result for the PR head: cite it as the evidence for "existing tests pass". Without it, say CI was not checked; never assume green.
 
 ## 1. Was the issue right? (business and spec)
 

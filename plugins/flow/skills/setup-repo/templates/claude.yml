@@ -37,6 +37,14 @@ jobs:
           fetch-depth: 0
       # So Claude can run the same checks as CI before the PR (ship skill).
       # setup-repo: copy the language setup + install steps from ci.yml here.
+      # On a PR (@claude comment or review): remember the head, to see whether Claude pushed.
+      - name: PR head before Claude
+        id: before
+        if: github.event.issue.pull_request || github.event.pull_request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: echo "sha=$(gh pr view "$N" -R "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid)" >> "$GITHUB_OUTPUT"
       - uses: anthropics/claude-code-action@v1
         id: claude
         with:
@@ -67,3 +75,20 @@ jobs:
           gh pr view "$BR" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh pr create -R "$GITHUB_REPOSITORY" --head "$BR" --base main --title "$TITLE" \
             --body "Closes #$N. Built by Claude from the issue; what was done is in the issue comment."
           gh workflow run ci.yml -R "$GITHUB_REPOSITORY" --ref "$BR"
+          # Runs started with GITHUB_TOKEN do not fire workflow_run, so start the review here.
+          # It waits for this CI run itself (logic lives in bart-netizen/claude-workflow).
+          if [ -f .github/workflows/review.yml ]; then
+            gh workflow run review.yml -R "$GITHUB_REPOSITORY" -f pr="$(gh pr view "$BR" -R "$GITHUB_REPOSITORY" --json number -q .number)"
+          fi
+      # After an @claude fix on a PR: Claude's push starts no workflows, so start CI and review.
+      - name: Re-run CI and review after Claude pushed to the PR
+        if: always() && steps.before.outputs.sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.event.issue.number || github.event.pull_request.number }}
+          BEFORE: ${{ steps.before.outputs.sha }}
+        run: |
+          read -r BR SHA <<<"$(gh pr view "$N" -R "$GITHUB_REPOSITORY" --json headRefName,headRefOid -q '.headRefName + " " + .headRefOid')"
+          if [ "$SHA" = "$BEFORE" ]; then echo "Claude pushed nothing; no new CI or review."; exit 0; fi
+          gh workflow run ci.yml -R "$GITHUB_REPOSITORY" --ref "$BR"
+          if [ -f .github/workflows/review.yml ]; then gh workflow run review.yml -R "$GITHUB_REPOSITORY" -f pr="$N"; fi
