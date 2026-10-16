@@ -70,7 +70,7 @@ jobs:
           st=""; co=""; url=""
           while :; do
             line=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100" --jq \
-              "[.workflow_runs[] | select(.path | split(\"@\")[0] | endswith(\"/$CI_FILE\"))]
+              "[.workflow_runs[] | select((.path | split(\"@\")[0] | endswith(\"/$CI_FILE\")) and .conclusion != \"action_required\")]
                | if length == 0 then empty else (sort_by(.created_at) | last | [.status, (.conclusion // \"\"), .html_url] | @tsv) end")
             if [ -n "$line" ]; then IFS=$'\t' read -r st co url <<<"$line"; [ "$st" = completed ] && break; fi
             if [ "$SECONDS" -ge "$deadline" ]; then co="timeout"; break; fi
@@ -95,6 +95,8 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Own workflow token: no GitHub App token exchange needed for a read-only reviewer.
           github_token: ${{ github.token }}
+          # claude.yml starts this review with GITHUB_TOKEN, so the actor is the github-actions bot.
+          allowed_bots: github-actions
           plugin_marketplaces: https://github.com/bart-netizen/claude-workflow.git
           plugins: flow@bart-workflow
           show_full_output: ${{ runner.debug == '1' }}
