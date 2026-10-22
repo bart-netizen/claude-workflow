@@ -18,7 +18,7 @@ Goal: after this, the user's loop is "describe idea -> add label `claude` -> rev
    `claude plugin install flow@bart-workflow --scope project`
    and commit the resulting `.claude/settings.json`.
 5. **Workflows**: copy from `${CLAUDE_SKILL_DIR}/templates/` into `.github/workflows/`, filling the placeholders:
-   - `claude.yml`: builds issues labelled `claude` and answers `@claude` on issues and PRs.
+   - `claude.yml`: a short caller of the reusable workflow `bart-netizen/claude-workflow/.github/workflows/claude.yml@v1`: builds issues labelled `claude` and answers `@claude` on issues and PRs. Claude opens its PR itself with the Claude App token, so `pull_request` CI and the review start without a click. Fill the inputs from ci.yml: the language (`python_version`, `python_version_file` or `node_version_file`), `install`, and `allowed_tools` for the Project facts test/lint commands. Optional: `model`, `opus_label` (issues with that label run on opus), `gcp_workload_identity_provider` + `gcp_service_account` (Google auth for the project's own code), `app_env` (KEY=VALUE lines from repo variables) and `app_oidc_prefix`. Pass `CLAUDE_CODE_OAUTH_TOKEN` explicitly and add no concurrency group in the caller.
    - `review.yml`: a short caller of the reusable workflow `bart-netizen/claude-workflow/.github/workflows/review.yml@v1`: after green CI an independent Claude (Opus) runs the `review` skill; one comment per PR with a verdict, updated on each push. Never approves or merges. Set `workflows:` to the exact `name:` of the repo's CI workflow. The repo's Actions settings must allow reusable workflows from other repositories.
    - `deploy.yml`: on push to `main`, deploys to Cloud Run (build runs in Cloud Build) and smoke-tests the health URL.
    - `check-prod.yml`: daily gate of seconds; Claude analyses logs only after a deploy (24h) and every Monday (7d).
@@ -34,14 +34,14 @@ Goal: after this, the user's loop is "describe idea -> add label `claude` -> rev
    - variables: `GCP_PROJECT`, `GCP_REGION`, `CLOUD_RUN_SERVICE`, `GCP_WIF_PROVIDER`, `GCP_DEPLOY_SA`, `HEALTH_URL`
    - secret: `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`), or `ANTHROPIC_API_KEY`
    - labels: create `claude` and `prod-check` with `gh label create`.
-   - repo setting: allow GitHub Actions to create pull requests (`gh api -X PUT repos/<repo>/actions/permissions/workflow -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true`), otherwise the auto-PR step in claude.yml fails.
+   - Claude GitHub App: installed on the repo (https://github.com/apps/claude, or `/install-github-app` in Claude Code). It is the identity that pushes Claude's branches and opens its PRs. The repo setting "Allow GitHub Actions to create and approve pull requests" is not needed; leave it off.
    - token: tell the user to run `claude setup-token`, then `pbpaste | tr -d ' \n\r' | gh secret set CLAUDE_CODE_OAUTH_TOKEN -R <repo>` (a pasted token often breaks on line wraps: 401 "OAuth access token is invalid").
 8. Open a PR with all of it, body listing what the user still has to do (step 6/7 items). Do not merge.
 
 ## Rules
 
 - Check required status checks first (`gh api repos/<repo>/branches/main/protection --jq .required_status_checks`). Never put a paths filter on a workflow whose job is a required check.
-- Test the label route once after merge with a small real docs issue: label `claude` must end in an open PR with CI running, without a click. Debug failures with `gh run rerun <id> --debug` (shows the full Claude output).
+- Test the label route once after merge with a small real docs issue: label `claude` must end in a PR opened by the Claude app (author `app/claude`), with a `pull_request` CI run and a review comment, without a click or a dispatch. Then ask a small change with `@claude` on that PR: CI and the review must run again. Debug failures with `gh run rerun <id> --debug` (shows the full Claude output).
 
 - Never put project ids, URLs of private services, tokens or customer names in the flow plugin repo; they belong in the project repo only.
 - Do not change application code during setup.

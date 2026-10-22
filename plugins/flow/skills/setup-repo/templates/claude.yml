@@ -1,4 +1,6 @@
-# Builds issues labelled "claude" and answers @claude on issues and PRs.
+# Builds issues labelled "claude" and answers @claude on issues and PRs. The logic lives in
+# bart-netizen/claude-workflow (reusable workflow); this file says when, and what this repo needs.
+# Claude opens its PRs with the Claude App token, so CI and the review start by themselves.
 # The other route still works: start Claude Code yourself, it pushes a claude/ branch.
 name: claude
 
@@ -12,83 +14,25 @@ on:
   pull_request_review:
     types: [submitted]
 
-concurrency:
-  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
-  cancel-in-progress: false
-
+# The ceiling for the reusable workflow: it cannot get more than this. Its concurrency group
+# lives there too; do not add one here, the two would wait on each other.
 permissions:
   contents: write
   pull-requests: write
   issues: write
-  id-token: write
-  actions: write   # to start CI on Claude's branch (see last step)
+  id-token: write   # the Claude action mints its App token with this
+  actions: read
 
 jobs:
   claude:
-    if: |
-      (github.event_name == 'issues' && github.event.label.name == 'claude') ||
-      contains(github.event.comment.body, '@claude') ||
-      contains(github.event.review.body, '@claude')
-    runs-on: ubuntu-latest
-    timeout-minutes: 45   # cap runaway runs; ci-report shows real durations
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      # So Claude can run the same checks as CI before the PR (ship skill).
-      # setup-repo: copy the language setup + install steps from ci.yml here.
-      # On a PR (@claude comment or review): remember the head, to see whether Claude pushed.
-      - name: PR head before Claude
-        id: before
-        if: github.event.issue.pull_request || github.event.pull_request
-        env:
-          GH_TOKEN: ${{ github.token }}
-          N: ${{ github.event.issue.number || github.event.pull_request.number }}
-        run: echo "sha=$(gh pr view "$N" -R "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid)" >> "$GITHUB_OUTPUT"
-      - uses: anthropics/claude-code-action@v1
-        id: claude
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: https://github.com/bart-netizen/claude-workflow.git
-          plugins: flow@bart-workflow
-          # Full Claude output only on a debug re-run (gh run rerun <id> --debug); private repo.
-          show_full_output: ${{ runner.debug == '1' }}
-          additional_permissions: |
-            actions: read
-          claude_args: >-
-            --allowedTools "Bash(<TEST_CMD> *),Bash(<LINT_CMD> *),Bash(git *),Bash(gh pr *),Bash(gh issue *),Bash(gh run *)"
-          # No prompt on purpose: tag mode reads the issue or comment itself.
-          # "Way of working" in CLAUDE.md Project facts makes it finish with the ship skill.
-      # Tag mode only leaves a "Create PR" link. Open the PR here, so the human step is only
-      # review + merge. A PR opened with GITHUB_TOKEN does not trigger workflows, but
-      # workflow_dispatch does, so CI is started explicitly on the branch.
-      - name: Open PR and start CI
-        if: github.event_name == 'issues' && steps.claude.outputs.branch_name != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BR: ${{ steps.claude.outputs.branch_name }}
-          N: ${{ github.event.issue.number }}
-          TITLE: ${{ github.event.issue.title }}
-        run: |
-          # Ask the API, not git: the action has already revoked the git credentials it set up.
-          if ! gh api "repos/$GITHUB_REPOSITORY/branches/$BR" --silent 2>/dev/null; then echo "No branch pushed; nothing to open."; exit 0; fi
-          gh pr view "$BR" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh pr create -R "$GITHUB_REPOSITORY" --head "$BR" --base main --title "$TITLE" \
-            --body "Closes #$N. Built by Claude from the issue; what was done is in the issue comment."
-          gh workflow run ci.yml -R "$GITHUB_REPOSITORY" --ref "$BR"
-          # Runs started with GITHUB_TOKEN do not fire workflow_run, so start the review here.
-          # It waits for this CI run itself (logic lives in bart-netizen/claude-workflow).
-          if [ -f .github/workflows/review.yml ]; then
-            gh workflow run review.yml -R "$GITHUB_REPOSITORY" -f pr="$(gh pr view "$BR" -R "$GITHUB_REPOSITORY" --json number -q .number)"
-          fi
-      # After an @claude fix on a PR: Claude's push starts no workflows, so start CI and review.
-      - name: Re-run CI and review after Claude pushed to the PR
-        if: always() && steps.before.outputs.sha != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          N: ${{ github.event.issue.number || github.event.pull_request.number }}
-          BEFORE: ${{ steps.before.outputs.sha }}
-        run: |
-          read -r BR SHA <<<"$(gh pr view "$N" -R "$GITHUB_REPOSITORY" --json headRefName,headRefOid -q '.headRefName + " " + .headRefOid')"
-          if [ "$SHA" = "$BEFORE" ]; then echo "Claude pushed nothing; no new CI or review."; exit 0; fi
-          gh workflow run ci.yml -R "$GITHUB_REPOSITORY" --ref "$BR"
-          if [ -f .github/workflows/review.yml ]; then gh workflow run review.yml -R "$GITHUB_REPOSITORY" -f pr="$N"; fi
+    uses: bart-netizen/claude-workflow/.github/workflows/claude.yml@v1
+    with:
+      # setup-repo: the same language setup and install as ci.yml
+      # (python_version: "3.12", python_version_file: .python-version, or node_version_file: .nvmrc).
+      python_version_file: .python-version
+      install: <INSTALL_CMD>
+      # The repo's own check commands, so Claude can run them before the PR.
+      allowed_tools: Bash(<TEST_CMD> *),Bash(<LINT_CMD> *)
+    secrets:
+      # Explicit: `secrets: inherit` does not cross organisations.
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

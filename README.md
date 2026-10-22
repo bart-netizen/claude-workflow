@@ -31,7 +31,7 @@ Then in Claude Code: `/plugin` → Marketplaces → `bart-workflow` → **Enable
 
 ## Put a project on the flow (once per repo)
 
-Open Claude Code in the repo and say: *"zet deze repo op de flow"*. The `setup-repo` skill opens a PR and lists the few things you still set yourself (GCP Workload Identity, repo variables, the `CLAUDE_CODE_OAUTH_TOKEN` secret).
+Open Claude Code in the repo and say: *"zet deze repo op de flow"*. The `setup-repo` skill opens a PR and lists the few things you still set yourself (GCP Workload Identity, repo variables, the `CLAUDE_CODE_OAUTH_TOKEN` secret, the Claude GitHub App on the repo).
 
 Project-specific facts (GCP project, service, commands) live in each project's `CLAUDE.md`, never in this repo.
 
@@ -44,7 +44,7 @@ Project-specific facts (GCP project, service, commands) live in each project's `
 
 ## Reusable workflows
 
-Workflow logic lives here once, under `.github/workflows/`, and project repos call it with a few lines (`uses: bart-netizen/claude-workflow/.github/workflows/<name>.yml@v1`). Improve it here, move the `v1` tag, and every repo follows. Today: `review` (it also waits for CI on the PR head itself, so callers only say *when*). The other workflows are still copied from `setup-repo/templates` and move here when they are next touched.
+Workflow logic lives here once, under `.github/workflows/`, and project repos call it with a few lines (`uses: bart-netizen/claude-workflow/.github/workflows/<name>.yml@v1`). Improve it here, move the `v1` tag, and every repo follows. Today: `review` (it also waits for CI on the PR head itself, so callers only say *when*) and `claude`, the builder (Claude opens its PRs with the Claude App token, so CI and the review start by themselves; callers pass their language setup, install command and check tools as inputs). The other workflows are still copied from `setup-repo/templates` and move here when they are next touched.
 
 ## CI cost
 
